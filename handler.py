@@ -1,152 +1,132 @@
 import runpod
 import base64
-import io
 from groq import Groq
 from openai import OpenAI
 import os
-import asyncio
+import time
+import io
 
-# Initialize AI clients
+CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+
+# Initialize clients
 groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
-SYSTEM_PROMPT = "You are an AI assistant created by Sayed Raheel. Keep answers concise and helpful."
+SYSTEM_PROMPT = """You are Sayed Raheel's assistant. Keep responses concise and professional."""
 
-async def process_llm(text: str) -> str:
-    """Process text through LLM"""
+def process_in_chunks(file_path):
+    """Process file in chunks for better memory usage"""
+    audio_chunks = []
+    with open(file_path, 'rb') as file:
+        while True:
+            chunk = file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            audio_chunks.append(base64.b64encode(chunk).decode())
+    return "".join(audio_chunks)
+
+async def async_handler(job):
     try:
-        chat_completion = await asyncio.to_thread(
-            groq_client.chat.completions.create,
+        start_time = time.time()
+        print("\n=== New Request Started ===")
+        
+        # Get input from job
+        input_type = job["input"]["type"]
+        
+        if input_type == "text":
+            text_input = job["input"]["text"]
+            print("Processing text input")
+        else:
+            print("Processing audio input...")
+            audio_start = time.time()
+            
+            # Process incoming audio in chunks
+            audio_base64 = job["input"]["audio"]
+            audio_bytes = base64.b64decode(audio_base64)
+            
+            temp_filename = "/tmp/temp_recording.wav"
+            with open(temp_filename, "wb") as f:
+                # Write in chunks
+                buffer = io.BytesIO(audio_bytes)
+                while True:
+                    chunk = buffer.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                
+            with open(temp_filename, "rb") as file:
+                translation = groq_client.audio.translations.create(
+                    file=(temp_filename, file.read()),
+                    model="whisper-large-v3",
+                    response_format="json",
+                    temperature=0.0
+                )
+            text_input = translation.text
+            print(f"Audio transcription took {time.time() - audio_start:.2f}s")
+        
+        # LLM Response
+        llm_start = time.time()
+        chat_completion = groq_client.chat.completions.create(
             messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": text
-                }
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": text_input}
             ],
-            model=DEFAULT_MODEL,
+            model="llama-3.3-70b-versatile",
             temperature=0.5,
-            max_tokens=2048,
-            top_p=1,
+            max_tokens=2048
         )
-        return chat_completion.choices[0].message.content
-    except Exception as e:
-        raise Exception(f"LLM processing error: {str(e)}")
-
-async def generate_speech(text: str) -> str:
-    """Generate text-to-speech"""
-    try:
-        # Generate TTS response
-        tts_response = await asyncio.to_thread(
-            openai_client.audio.speech.create,
+        ai_response = chat_completion.choices[0].message.content
+        print(f"LLM response took {time.time() - llm_start:.2f}s")
+        
+        # TTS Generation with chunked processing
+        tts_start = time.time()
+        print("Starting TTS generation...")
+        
+        output_path = "/tmp/response.wav"
+        
+        # Generate TTS using OpenAI
+        tts_response = openai_client.audio.speech.create(
             model="tts-1",
             voice="onyx",
-            input=text
+            input=ai_response
         )
         
-        # Convert to base64
-        audio_response = io.BytesIO()
-        for chunk in tts_response.iter_bytes():
-            audio_response.write(chunk)
-        return base64.b64encode(audio_response.getvalue()).decode()
-    except Exception as e:
-        raise Exception(f"TTS generation error: {str(e)}")
-
-async def process_audio_input(audio_base64: str):
-    """Process audio input"""
-    try:
-        # Decode audio
-        audio_bytes = base64.b64decode(audio_base64)
+        # Save to file using chunks
+        with open(output_path, "wb") as f:
+            buffer = io.BytesIO()
+            for chunk in tts_response.iter_bytes(chunk_size=CHUNK_SIZE):
+                f.write(chunk)
         
-        # Using temp file for Groq processing
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as temp_file:
-            temp_file.write(audio_bytes)
-            temp_file.flush()
+        # Process output audio in chunks
+        audio_base64 = process_in_chunks(output_path)
+        print(f"TTS generation took {time.time() - tts_start:.2f}s")
+        
+        # Cleanup
+        if os.path.exists("/tmp/temp_recording.wav"):
+            os.remove("/tmp/temp_recording.wav")
+        if os.path.exists(output_path):
+            os.remove(output_path)
             
-            # Transcribe
-            translation = await asyncio.to_thread(
-                groq_client.audio.translations.create,
-                file=(temp_file.name, open(temp_file.name, "rb")),
-                model="whisper-large-v3",
-                response_format="json",
-                temperature=0.0
-            )
-        
-        # Process through LLM and generate speech
-        ai_response = await process_llm(translation.text)
-        audio_response = await generate_speech(ai_response)
+        print(f"Total request time: {time.time() - start_time:.2f}s")
         
         return {
             "user_input": {
-                "type": "audio",
-                "transcription": translation.text
+                "type": input_type, 
+                "text": text_input
             },
             "assistant_response": {
-                "text": ai_response,
-                "audio": audio_response
+                "text": ai_response, 
+                "audio": audio_base64
             }
-        }
-    except Exception as e:
-        raise Exception(f"Audio processing error: {str(e)}")
-
-async def process_text_input(text: str):
-    """Process text input"""
-    try:
-        # Process through LLM and generate speech
-        ai_response = await process_llm(text)
-        audio_response = await generate_speech(ai_response)
-        
-        return {
-            "user_input": {
-                "type": "text",
-                "text": text
-            },
-            "assistant_response": {
-                "text": ai_response,
-                "audio": audio_response
-            }
-        }
-    except Exception as e:
-        raise Exception(f"Text processing error: {str(e)}")
-
-async def handler(job):
-    """Main handler function for RunPod"""
-    job_input = job["input"]
-    job_id = job.get("id", "")
-    
-    try:
-        input_type = job_input.get("type")
-        
-        if input_type == "audio":
-            result = await process_audio_input(job_input["audio"])
-        elif input_type == "text":
-            result = await process_text_input(job_input["text"])
-        else:
-            return {
-                "id": job_id,
-                "status": "error",
-                "error": f"Invalid input type: {input_type}"
-            }
-            
-        return {
-            "id": job_id,
-            "status": "completed",
-            "output": result
         }
         
     except Exception as e:
-        return {
-            "id": job_id,
-            "status": "error",
-            "error": str(e)
-        }
+        print(f"Error in handler: {str(e)}")
+        return {"error": str(e)}
 
-# Start the RunPod handler
+print("Starting server...")
+print("Server ready!")
+
 runpod.serverless.start({
-    "handler": handler
+    "handler": async_handler
 })

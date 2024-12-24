@@ -1,10 +1,10 @@
 import runpod
 import base64
+import io
 from groq import Groq
 from openai import OpenAI
 import os
 import asyncio
-import tempfile
 
 # Initialize AI clients
 groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -38,46 +38,46 @@ async def process_llm(text: str) -> str:
         raise Exception(f"LLM processing error: {str(e)}")
 
 async def generate_speech(text: str) -> str:
-    """Generate text-to-speech with streaming"""
+    """Generate text-to-speech"""
     try:
-        # Stream the TTS response directly to base64
+        # Generate TTS response
         tts_response = await asyncio.to_thread(
             openai_client.audio.speech.create,
             model="tts-1",
             voice="onyx",
-            input=text,
-            response_format="mp3"  # Explicitly set format
+            input=text
         )
         
-        # Efficiently stream and encode to base64
-        audio_chunks = []
-        async for chunk in tts_response:
-            audio_chunks.append(chunk)
-        return base64.b64encode(b''.join(audio_chunks)).decode()
+        # Convert to base64
+        audio_response = io.BytesIO()
+        for chunk in tts_response.iter_bytes():
+            audio_response.write(chunk)
+        return base64.b64encode(audio_response.getvalue()).decode()
     except Exception as e:
         raise Exception(f"TTS generation error: {str(e)}")
 
 async def process_audio_input(audio_base64: str):
-    """Process audio input with efficient file handling"""
+    """Process audio input"""
     try:
-        # Decode audio directly to bytes
+        # Decode audio
         audio_bytes = base64.b64decode(audio_base64)
         
-        # Use context manager for automatic cleanup
+        # Using temp file for Groq processing
+        import tempfile
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as temp_file:
             temp_file.write(audio_bytes)
             temp_file.flush()
             
-            # Stream transcription
+            # Transcribe
             translation = await asyncio.to_thread(
                 groq_client.audio.translations.create,
-                file=temp_file.name,
+                file=(temp_file.name, open(temp_file.name, "rb")),
                 model="whisper-large-v3",
                 response_format="json",
                 temperature=0.0
             )
         
-        # Parallel processing of LLM and TTS
+        # Process through LLM and generate speech
         ai_response = await process_llm(translation.text)
         audio_response = await generate_speech(ai_response)
         
@@ -95,9 +95,9 @@ async def process_audio_input(audio_base64: str):
         raise Exception(f"Audio processing error: {str(e)}")
 
 async def process_text_input(text: str):
-    """Process text input with parallel processing"""
+    """Process text input"""
     try:
-        # Process LLM and generate speech in parallel
+        # Process through LLM and generate speech
         ai_response = await process_llm(text)
         audio_response = await generate_speech(ai_response)
         
@@ -115,7 +115,7 @@ async def process_text_input(text: str):
         raise Exception(f"Text processing error: {str(e)}")
 
 async def handler(job):
-    """Main handler function for RunPod with improved response formatting"""
+    """Main handler function for RunPod"""
     job_input = job["input"]
     job_id = job.get("id", "")
     

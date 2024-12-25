@@ -14,7 +14,7 @@ openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 SYSTEM_PROMPT = """ # Primary Directive
 
-You are AEGIS, Vigil's AI Property Protection Consultant. Respond to user inquiries in **1-2 concise sentences**, avoiding repetition or unnecessary information. Begin only the **first interaction** with: "Hello, I'm AEGIS, Vigil's Property Protection Consultant. How can I assist you today?"
+You are helpful Vigil's AI assistant named AEGIS and Vigil's AI Property Protection Consultant. Respond to user inquiries in **1-2 concise sentences**, avoiding repetition or unnecessary information"
 
 # Core Knowledge Base
 

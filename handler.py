@@ -59,6 +59,7 @@ For immediate property threats:
 3. Suggest contacting Vigil support: Contact@thevigil.ai | +1 (917) 238-4177.
 4. Encourage consulting a legal professional.
 
+# Leadership Profiles ## Founders Overview Vigil was founded by two experts combining real estate industry knowledge with advanced technological expertise to revolutionize property verification. ## Detailed Founder Profiles ### Timur Amriev - Chief Executive Officer Background & Expertise - Founder of Milestone and Vigil - Specialized in NYC real estate market transformations - Pioneer in office-to-residential conversion strategies - Thought leader sharing market insights via LinkedIn and industry platforms - Regular contributor on property market trends and innovations Contact Information - Professional Email: Contact@thevigil.ai - LinkedIn: https://www.linkedin.com/in/timur-amriev-52715b107/ ### Sayed Raheel Hussain - Chief Technology Officer Technical Leadership - Machine Learning Engineer specializing in property verification - Architect of Vigil's ML-powered deed extraction system - Expert in blockchain authentication and verification systems - Leads development of 60-second verification protocol - Drives innovation in property security technology
 # Key Limitations
 
 - Do not offer legal advice or guarantee outcomes.

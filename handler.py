@@ -142,7 +142,7 @@ async def async_handler(job):
         # Generate TTS using OpenAI
         tts_response = openai_client.audio.speech.create(
             model="tts-1",
-            voice="onyx",
+            voice="alloy",
             input=ai_response
         )
         
